@@ -1,0 +1,137 @@
+@page "/fetchdata"
+
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<h1>Weather forecast</h1>
+
+<p>This component demonstrates fetching data from the server.</p>
+
+@if (forecasts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var forecast in forecasts)
+            {
+                <tr>
+                    <td>@forecast.Date.ToShortDateString()</td>
+                    <td>@forecast.TemperatureC</td>
+                    <td>@forecast.TemperatureF</td>
+                    <td>@forecast.Summary</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+
+    <InputFile OnChange=@this.ImportAsync id="File" class="d-none" />
+
+    <div class="mt-4">
+        <button class="btn btn-link" @onclick=@this.ImportAsync2>Import</button>
+        <small class="text-muted">@this.Status</small>
+        <button class="btn btn-link" @onclick=@this.ExportAsync>Export</button>
+    </div>
+}
+
+@code {
+    private WeatherForecast[] forecasts;
+
+    private string Status { get; set; }
+    private string Output { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        forecasts = await Http.GetFromJsonAsync<WeatherForecast[]>("sample-data/weather.json");
+    }
+
+    public class WeatherForecast
+    {
+        public DateTime Date { get; set; }
+
+        public int TemperatureC { get; set; }
+
+        public string Summary { get; set; }
+
+        public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    }
+
+    public async Task ExportAsync()
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"Date,TemperatureC,Summary,TemperatureF");
+
+        foreach (var forecast in forecasts)
+        {
+            sb.AppendLine($"{forecast.Date:d},{forecast.TemperatureC},{forecast.Summary},{forecast.TemperatureF}");
+        }
+
+        await JS.SaveAsAsync("forecast.csv", Encoding.ASCII.GetBytes(sb.ToString()));
+    }
+
+    // https://github.com/SteveSandersonMS/BlazorInputFile
+    // http://blog.stevensanderson.com/2019/09/13/blazor-inputfile/
+
+    public async Task ImportAsync2()
+    {
+        await JS.ClickAsync("File");
+    }
+
+    public async Task ImportAsync(
+        IFileListEntry[] files)
+    {
+        var importedForecasts = new List<WeatherForecast>();
+
+        var file = files.FirstOrDefault();
+
+        if (file != null)
+        {
+            var ms = new MemoryStream();
+
+            await file.Data.CopyToAsync(ms);
+
+            var text = Convert.ToBase64String(ms.ToArray());
+
+            var rows = Encoding.UTF8.GetString(Convert.FromBase64String(text)).Split(Environment.NewLine);
+
+            for (var row = 1; row < rows.Length - 1; row++)
+            {
+                Console.WriteLine(rows[row]);
+
+                var columns = rows[row].Split(",");
+
+                Console.WriteLine(columns[0]);
+                Console.WriteLine(columns[1]);
+                Console.WriteLine(columns[2]);
+                Console.WriteLine(columns[3]);
+
+                var forecast =
+                    new WeatherForecast();
+
+                forecast.Date = Convert.ToDateTime(columns[0]);
+                forecast.TemperatureC = Convert.ToInt32(columns[1]);
+                forecast.Summary = columns[3];
+
+                importedForecasts.Add(forecast);
+            }
+
+            forecasts = importedForecasts.ToArray();
+
+            this.StateHasChanged();
+
+            this.Status = $"Finished loading {file.Size} bytes from {file.Name}";
+        }
+    }
+}
